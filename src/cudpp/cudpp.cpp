@@ -56,6 +56,7 @@
 #include "cudpp_listrank.h"
 #include <stdio.h>
 
+
 /**
  * @brief Performs a scan operation of numElements on its input in
  * GPU memory (d_in) and places the output in GPU memory
@@ -475,6 +476,35 @@ CUDPPResult cudppStringSort(const CUDPPHandle planHandle,
 }
 
 /**
+* @brief This function implements the string sorting method in:
+*
+* "Can GPUs Sort Strings Efficiently?", at HiPC'13
+*
+* Contact Aditya Deshpande (aditya12agd5@gmail.com) for support and bug reports.
+* 
+* @param[in] stringVals Original string input, no need for alignment or offsets. 
+* @param[in] d_address Pointers (in order) to each strings starting location in the stringVals array
+* @param[in] termC Termination character used to separate strings
+* @param[in] numElements number of strings
+* @param[in] stringArrayLength Length in uint of the size of all strings
+* @returns CUDPPResult indicating success or error condition 
+*
+*/
+CUDPP_DLL
+CUDPPResult cudppStringSortRadix(unsigned char *d_arrayStringVals, 
+		    unsigned int  *d_arrayAddress, 
+		    unsigned char termC, 
+		    size_t numElements, 
+		    size_t stringArrayLength) {
+
+	printf("Executing radix sort based string sort procedure\n"); 
+
+	cudppStringSortRadixWrapper(d_arrayStringVals, d_arrayAddress, termC, numElements, stringArrayLength);
+ 
+	return CUDPP_SUCCESS;
+}
+
+/**
  * @brief Sorts strings. Keys are the first four characters of the string, 
  * and values are the addresses where the strings reside in memory (stringVals)
  * 
@@ -497,11 +527,12 @@ CUDPPResult cudppStringSort(const CUDPPHandle planHandle,
 CUDPP_DLL
 CUDPPResult cudppStringSort(const CUDPPHandle planHandle,                      
                       unsigned char     *d_stringVals,					  
-					  unsigned int      *d_address,
-					  unsigned char     termC,
+		      unsigned int      *d_address,
+		      unsigned char     termC,
                       size_t            numElements,
                       size_t            stringArrayLength)
-{    			
+{
+	
     CUDPPStringSortPlan *plan = 
         (CUDPPStringSortPlan*)getPlanPtrFromHandle<CUDPPStringSortPlan>(planHandle);
 

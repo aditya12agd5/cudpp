@@ -26,6 +26,7 @@
 
 #include <stdlib.h> // for size_t
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -328,6 +329,12 @@ CUDPPResult cudppListRank(CUDPPHandle planHandle,
                           size_t head,
                           size_t numElements);
 
+CUDPP_DLL
+CUDPPResult cudppStringSortRadix(unsigned char *d_arrayStringVals, 
+		    unsigned int  *d_arrayAddress, 
+		    unsigned char termC, 
+		    size_t numElements, 
+		    size_t stringArrayLength);
 #ifdef __cplusplus
 }
 #endif

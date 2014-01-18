@@ -14,6 +14,16 @@
 #include "cudpp.h"
 #include "cudpp_plan.h"
 
+#include <cuda_runtime_api.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/generate.h>
+#include <thrust/sort.h>
+#include <thrust/copy.h>
+#include <cstdlib>
+#include <math.h>
+
+
 extern "C"
 void allocStringSortStorage(CUDPPStringSortPlan* plan);
 
@@ -46,6 +56,36 @@ void calculateAlignedOffsets(unsigned int* d_address,
 							 unsigned char termC,
 							 size_t numElements,
 							 size_t stringArrayLength);
+
+
+extern "C"
+void cudppStringSortRadixSetup( unsigned char* d_stringVals,
+		     unsigned int* d_valIndex, 
+		     unsigned long long int* d_packedArray,
+		     unsigned int* d_array_valIndex,
+		     unsigned int* d_array_static_index,
+		     unsigned char termC,
+		     size_t numElements, 
+		     size_t stringArrayLength);
+
+extern "C" 
+void cudppStringSortRadixWrapper(
+	unsigned char *d_arrayStringVals, 
+	unsigned int *d_arrayAddress, 
+	unsigned char termC, 
+	size_t numElements,
+	size_t stringArrayLength); 
+
+extern "C"
+void cudppStringSortRadixMain(
+        unsigned char *d_array_stringVals,
+        thrust::device_vector<unsigned int> d_valIndex,
+        thrust::device_vector<unsigned long long int> d_segment_keys,
+        thrust::device_vector<unsigned int> d_static_index,
+        thrust::device_vector<unsigned int> d_output_valIndex,
+        size_t numElements,
+        size_t stringArrayLength);
+
 extern "C"
 void packStrings(unsigned int* packedStrings, 
 						 unsigned char* d_stringVals, 

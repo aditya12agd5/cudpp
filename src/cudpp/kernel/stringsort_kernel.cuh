@@ -13,7 +13,6 @@
 #include "sharedmem.h"
 #include "cta/stringsort_cta.cuh"
 
-
 /**
  * @file
  * stringsort_kernel.cu
@@ -1403,6 +1402,134 @@ void stringMergeMulti(T *A_keys, T*A_keys_out, T* A_values, T *A_values_out, T* 
                 
     }
     while(!breakout);
+}
+
+
+/**
+* @brief Packs strings into unsigned long long ints.
+*
+**/
+
+__global__ 
+void hipcPackStringsKernel(unsigned char* d_arrayStringVals, 
+			   unsigned int* d_address, 
+			   unsigned long long int* d_packedArray,
+			   unsigned int* d_array_valIndex,
+			   unsigned int* d_array_static_index, 
+			   char termC, 
+			   int numElements, 
+			   int stringArrayLength) {
+
+	int threadID = (blockIdx.x * blockDim.x) +  threadIdx.x;
+        if(threadID >= numElements) return;
+	
+	unsigned long long int val = 0;
+	unsigned int address = d_address[threadID];
+	
+	for(int i = 0; i < 8; i++) {
+		unsigned char ch = d_arrayStringVals[address + i];
+		if(ch == termC) break;
+		val = val | (((unsigned long long int) ch) << ((7-i)*8)); 
+	}
+	d_packedArray[threadID] = val;
+	d_array_valIndex[threadID] = address;
+	d_array_static_index[threadID] = threadID; 
+}
+
+__global__
+void hipcFindSuccessorKernel(unsigned char *d_array_stringVals, 
+			     unsigned long long int *d_array_segment_keys,  
+	                     unsigned int *d_array_valIndex, 
+                             unsigned long long int *d_array_segment_keys_out,  
+                             unsigned int numElements, 
+		             unsigned int stringSize, 
+			     unsigned int charPosition, 
+			     unsigned int segmentBytes) {
+
+	int threadID = (blockIdx.x * blockDim.x) +  threadIdx.x;
+	if(threadID > numElements) return;
+	d_array_segment_keys_out[threadID] = 0;
+
+	if(threadID > 0) { 
+		if(d_array_segment_keys[threadID] != d_array_segment_keys[threadID-1]) { 
+			d_array_segment_keys_out[threadID] = ((unsigned long long int)(1) << 56);
+		}
+	}
+
+	unsigned int stringIndex = d_array_valIndex[threadID];
+	unsigned long long int currentKey = (d_array_segment_keys[threadID] << (segmentBytes*8));
+	unsigned char ch;
+	
+	int i = 0;
+	
+	unsigned int end = 0;
+
+	for(i = 7; i >= ((int)(segmentBytes)); i--) { 
+		ch = (unsigned char)(currentKey >> (i*8));
+		if(ch == '\0') { 
+			end = 1;
+			break;
+		}
+	}
+	
+	if( end == 0) {
+		unsigned int startPosition = charPosition;
+		for(i = 6; i >=0; i--) { 
+			if( stringIndex +  startPosition < stringSize ) { 
+				ch = d_array_stringVals[ stringIndex + startPosition ];
+				d_array_segment_keys_out[threadID] |= ((unsigned long long int) ch << (i*8)); 
+				startPosition++;
+				if(ch == '\0') break;
+			}
+			if(ch == '\0') break;
+		}
+		
+	} else { 
+		d_array_segment_keys_out[threadID] = ((unsigned long long int)(1) << 56);
+	}
+}
+
+__global__ 
+void  hipcEliminateSingletonKernel(unsigned int *d_array_output_valIndex, 
+			           unsigned int *d_array_valIndex, 
+			           unsigned int *d_array_static_index, 
+			           unsigned int *d_array_map, 
+			           unsigned int *d_array_stencil, 
+			           int currentSize) {
+
+	int threadID = (blockIdx.x * blockDim.x) +  threadIdx.x;
+	if(threadID >= currentSize) return;
+
+	d_array_stencil[threadID] = 1;
+
+        if(threadID == 0 && (d_array_map[threadID + 1] == 1)) { 
+		d_array_stencil[threadID] = 0; 
+	} else if( (threadID == (currentSize-1)) && (d_array_map[threadID] == 1) ) {
+		d_array_stencil[threadID] = 0;  
+	} else if( (d_array_map[threadID] == 1) && (d_array_map[threadID + 1] == 1)) { 
+		d_array_stencil[threadID] = 0; 
+	}
+	
+	if(d_array_stencil[threadID] == 0) { 
+		d_array_output_valIndex[ d_array_static_index[threadID] ] = d_array_valIndex[threadID]; 
+	}
+}
+
+__global__ 
+void hipcRearrangeSegMCUKernel(unsigned long long int *d_array_segment_keys, 
+			       unsigned long long int *d_array_segment_keys_out, 
+			       unsigned int *d_array_segment, 
+			       unsigned int segmentBytes, 
+			       unsigned int numElements) { 
+
+	int threadID = (blockIdx.x * blockDim.x) +  threadIdx.x;
+	if(threadID >= numElements) return;
+	
+	unsigned long long int currentKey = (d_array_segment_keys_out[threadID] << 8);
+	unsigned long long int segmentID  = (unsigned long long int) d_array_segment[threadID];
+	d_array_segment_keys[threadID] = (segmentID << ((8-segmentBytes)*8));
+	d_array_segment_keys[threadID] |= (currentKey >> (segmentBytes*8));
+	return;
 }
 
                 

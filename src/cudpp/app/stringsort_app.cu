@@ -30,7 +30,6 @@
 #include "kernel/stringsort_kernel.cuh"
 #include "limits.h"
 
-
 #define BLOCKSORT_SIZE 1024
 #define DEPTH 8
 
@@ -44,19 +43,221 @@ void dotAdd(unsigned int* d_address,
 	int numBlocks = (numElements+numThreads-1)/numThreads;
 	dotAddInclusive<<<numBlocks, numThreads>>>(numSpaces, d_address, packedAddress, numElements, stringArrayLength);
 }
+
 void calculateAlignedOffsets(unsigned int* d_address,	
 							 unsigned int* numSpaces,
 							 unsigned char* d_stringVals, 
 							 unsigned char termC,
 							 size_t numElements,
-							 size_t stringArrayLength)
-{
+							 size_t stringArrayLength) {
 	int numThreads = 128;
 	int numBlocks = (numElements+numThreads-1)/numThreads;
 
 	alignedOffsets<<<numBlocks, numThreads>>>(numSpaces, d_address, d_stringVals, termC, numElements, stringArrayLength);
 
 }
+
+struct get_segment_bytes {
+        __host__ __device__
+        unsigned int operator()(const unsigned long long int& x) const {
+                return (unsigned int)(x >> 56);
+        }
+};
+
+
+void cudppStringSortRadixWrapper(
+	unsigned char *d_arrayStringVals, 
+	unsigned int *d_arrayAddress, 
+	unsigned char termC, 
+	size_t numElements,
+	size_t stringArrayLength) {
+ 
+	thrust::device_vector<unsigned long long int> d_segment_keys(numElements);
+	unsigned long long int *d_array_segment_keys = thrust::raw_pointer_cast(&d_segment_keys[0]);
+	
+	thrust::device_ptr<unsigned char> d_stringVals = thrust::device_pointer_cast(d_arrayStringVals); 
+ 
+	thrust::device_vector<unsigned int> d_valIndex(numElements); 
+	unsigned int* d_array_valIndex = thrust::raw_pointer_cast(&d_valIndex[0]);
+
+        thrust::device_vector<unsigned int> d_static_index(numElements);
+	unsigned int* d_array_static_index = thrust::raw_pointer_cast(&d_static_index[0]);
+	
+        thrust::device_vector<unsigned int> d_output_valIndex(numElements);
+	
+	cudppStringSortRadixSetup(d_arrayStringVals, d_arrayAddress, d_array_segment_keys, 
+			d_array_valIndex, d_array_static_index, termC, 
+			numElements, stringArrayLength);
+ 
+	cudppStringSortRadixMain(d_arrayStringVals, d_valIndex, d_segment_keys, d_static_index, 
+		d_output_valIndex, numElements, stringArrayLength);
+
+	thrust::device_ptr<unsigned int> d_ptr_arrayAddress = thrust::device_pointer_cast(d_arrayAddress);
+
+	thrust::copy(d_output_valIndex.begin(), d_output_valIndex.begin() + numElements, d_ptr_arrayAddress);
+}
+
+void cudppStringSortRadixMain(
+	unsigned char* d_array_stringVals,
+	thrust::device_vector<unsigned int> d_valIndex, 
+	thrust::device_vector<unsigned long long int> d_segment_keys,
+	thrust::device_vector<unsigned int> d_static_index,
+	thrust::device_vector<unsigned int> d_output_valIndex,
+	size_t numElements, 
+	size_t stringArrayLength) {
+
+	int MAX_THREADS_PER_BLOCK = 512;
+        unsigned int charPosition = 8;
+        unsigned int segmentBytes = 0;
+        unsigned int lastSegmentID = 0;
+	unsigned int numSorts = 0;
+
+	while(true) { 
+
+                thrust::sort_by_key(
+			d_segment_keys.begin(),
+                        d_segment_keys.begin() + numElements,
+                        d_valIndex.begin()
+                );		
+		
+		numSorts++;
+
+                thrust::device_vector<unsigned long long int> d_segment_keys_out(numElements, 0);
+	
+                unsigned int *d_array_valIndex = thrust::raw_pointer_cast(&d_valIndex[0]);
+                unsigned int *d_array_static_index = thrust::raw_pointer_cast(&d_static_index[0]);
+                unsigned int *d_array_output_valIndex = thrust::raw_pointer_cast(&d_output_valIndex[0]);
+
+                unsigned long long int *d_array_segment_keys_out = thrust::raw_pointer_cast(&d_segment_keys_out[0]);
+                unsigned long long int *d_array_segment_keys = thrust::raw_pointer_cast(&d_segment_keys[0]);
+
+                int numBlocks = 1;
+                int numThreadsPerBlock = numElements/numBlocks;
+
+                if(numThreadsPerBlock > MAX_THREADS_PER_BLOCK) {
+                        numBlocks = (int)ceil(numThreadsPerBlock/(float)MAX_THREADS_PER_BLOCK);
+                        numThreadsPerBlock = MAX_THREADS_PER_BLOCK;
+                }
+                dim3 grid(numBlocks, 1, 1);
+                dim3 threads(numThreadsPerBlock, 1, 1);
+
+                cudaThreadSynchronize();
+                
+		
+		hipcFindSuccessorKernel<<<grid, threads, 0>>>(d_array_stringVals, d_array_segment_keys, d_array_valIndex,
+                                d_array_segment_keys_out, numElements, stringArrayLength, charPosition, segmentBytes);
+               	
+		cudaThreadSynchronize();
+
+                charPosition+=7;
+
+                thrust::device_vector<unsigned int> d_temp_vector(numElements);
+                thrust::device_vector<unsigned int> d_segment(numElements);
+                thrust::device_vector<unsigned int> d_stencil(numElements);
+                thrust::device_vector<unsigned int> d_map(numElements);
+
+                unsigned int *d_array_temp_vector = thrust::raw_pointer_cast(&d_temp_vector[0]);
+                unsigned int *d_array_segment = thrust::raw_pointer_cast(&d_segment[0]);
+                unsigned int *d_array_stencil = thrust::raw_pointer_cast(&d_stencil[0]);
+
+
+                thrust::transform(d_segment_keys_out.begin(), d_segment_keys_out.begin() + numElements, d_temp_vector.begin(), get_segment_bytes());
+
+		thrust::inclusive_scan(d_temp_vector.begin(), d_temp_vector.begin() + numElements, d_segment.begin());
+
+                cudaThreadSynchronize();
+                hipcEliminateSingletonKernel<<<grid, threads, 0>>>(d_array_output_valIndex, d_array_valIndex, d_array_static_index,
+                        d_array_temp_vector, d_array_stencil, numElements);
+                cudaThreadSynchronize();
+
+
+		thrust::exclusive_scan(d_stencil.begin(), d_stencil.begin() + numElements, d_map.begin());
+
+                thrust::scatter_if(d_segment.begin(), d_segment.begin() + numElements, d_map.begin(),
+                                d_stencil.begin(), d_temp_vector.begin());
+                thrust::copy(d_temp_vector.begin(), d_temp_vector.begin() + numElements, d_segment.begin());
+
+                thrust::scatter_if(d_valIndex.begin() , d_valIndex.begin() + numElements, d_map.begin(),
+                                d_stencil.begin(), d_temp_vector.begin());
+
+                thrust::copy(d_temp_vector.begin(), d_temp_vector.begin() + numElements, d_valIndex.begin());
+
+                thrust::scatter_if(d_static_index.begin(), d_static_index.begin() + numElements, d_map.begin(),
+                                d_stencil.begin(), d_temp_vector.begin());
+                thrust::copy(d_temp_vector.begin(), d_temp_vector.begin() + numElements, d_static_index.begin());
+
+                thrust::scatter_if(d_segment_keys_out.begin(), d_segment_keys_out.begin() + numElements, d_map.begin(),
+                                d_stencil.begin(), d_segment_keys.begin());
+                thrust::copy(d_segment_keys.begin(), d_segment_keys.begin() + numElements, d_segment_keys_out.begin());
+
+
+                numElements = *(d_map.begin() + numElements - 1) + *(d_stencil.begin() + numElements - 1);
+		if(numElements != 0) {
+                        lastSegmentID = *(d_segment.begin() + numElements - 1);
+                }
+
+                d_temp_vector.clear();
+                d_temp_vector.shrink_to_fit();
+
+                d_stencil.clear();
+                d_stencil.shrink_to_fit();
+
+                d_map.clear();
+                d_map.shrink_to_fit();
+
+		if(numElements == 0) {
+			break;
+		}
+
+                segmentBytes = (int) ceil(((float)(log2((float)lastSegmentID+2))*1.0)/8.0);
+                charPosition-=(segmentBytes-1);
+
+		int numBlocks1 = 1;
+                int numThreadsPerBlock1 = numElements/numBlocks1;
+
+                if(numThreadsPerBlock1 > MAX_THREADS_PER_BLOCK) {
+                        numBlocks1 = (int)ceil(numThreadsPerBlock1/(float)MAX_THREADS_PER_BLOCK);
+                        numThreadsPerBlock1 = MAX_THREADS_PER_BLOCK;
+                }
+                dim3 grid1(numBlocks1, 1, 1);
+                dim3 threads1(numThreadsPerBlock1, 1, 1);
+
+                cudaThreadSynchronize();
+                hipcRearrangeSegMCUKernel<<<grid1, threads1, 0>>>(d_array_segment_keys, d_array_segment_keys_out, d_array_segment,
+                                segmentBytes, numElements);
+                cudaThreadSynchronize();
+	}
+	printf("[DEBUG] Executed sort for %d iterations\n", numSorts);
+	
+	return;
+}
+
+void cudppStringSortRadixSetup( unsigned char* d_stringVals,
+		     unsigned int* d_valIndex, 
+		     unsigned long long int* d_packedArray,
+		     unsigned int* d_array_valIndex,
+		     unsigned int* d_array_static_index,
+		     unsigned char termC,
+		     size_t numElements, 
+		     size_t stringArrayLength) {
+ 
+		int numBlocks = 1;
+                int numThreadsPerBlock = numElements/numBlocks;
+
+                if(numThreadsPerBlock > 512) {
+                        numBlocks = (int)ceil(numThreadsPerBlock/(float)512);
+                        numThreadsPerBlock = 512;
+                }
+                dim3 grid(numBlocks, 1, 1);
+                dim3 threads(numThreadsPerBlock, 1, 1);
+
+		hipcPackStringsKernel<<<grid, threads, 0>>>(d_stringVals, d_valIndex, 
+			d_packedArray, d_array_valIndex, d_array_static_index, 
+			termC, numElements, stringArrayLength);
+		
+		return;
+}
+
 void packStrings(unsigned int* packedStrings, 
 						 unsigned char* d_stringVals, 
 						 unsigned int* d_keys, 						 
