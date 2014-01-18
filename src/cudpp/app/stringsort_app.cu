@@ -92,9 +92,7 @@ void cudppStringSortRadixWrapper(
 	cudppStringSortRadixMain(d_arrayStringVals, d_valIndex, d_segment_keys, d_static_index, 
 		d_output_valIndex, numElements, stringArrayLength);
 
-	thrust::device_ptr<unsigned int> d_ptr_arrayAddress = thrust::device_pointer_cast(d_arrayAddress);
-
-	thrust::copy(d_output_valIndex.begin(), d_output_valIndex.begin() + numElements, d_ptr_arrayAddress);
+	thrust::copy(d_output_valIndex.begin(), d_output_valIndex.end(), thrust::device_pointer_cast(d_arrayAddress));
 }
 
 void cudppStringSortRadixMain(
@@ -102,7 +100,7 @@ void cudppStringSortRadixMain(
 	thrust::device_vector<unsigned int> d_valIndex, 
 	thrust::device_vector<unsigned long long int> d_segment_keys,
 	thrust::device_vector<unsigned int> d_static_index,
-	thrust::device_vector<unsigned int> d_output_valIndex,
+	thrust::device_vector<unsigned int> &d_output_valIndex,
 	size_t numElements, 
 	size_t stringArrayLength) {
 
@@ -227,7 +225,6 @@ void cudppStringSortRadixMain(
                                 segmentBytes, numElements);
                 cudaThreadSynchronize();
 	}
-	printf("[DEBUG] Executed sort for %d iterations\n", numSorts);
 	
 	return;
 }
