@@ -139,6 +139,7 @@ runTest( int argc, char** argv)
     unsigned int stringSize = 0;
     unsigned int numElements = 10000000;
     unsigned int MAXBYTES = numElements*maxStringLength;
+    //increase MAXBYTES for larger input size
 
     h_valSend      = (unsigned int*)malloc(numElements*sizeof(unsigned int));
     h_stringVals = (unsigned char*) malloc(sizeof(unsigned char)*maxStringLength*numElements);
@@ -161,19 +162,14 @@ runTest( int argc, char** argv)
     numElements = 0;
     unsigned int i = 0;
     char c; 
-    /* pack the strings of the read file into array of unsigned integers */
+
+    /* pack the strings of the read file into array of unsigned chars with \0 as delimiter */
+    //TODO: can pass newline character as termC also.
     while(i < MAXBYTES) { 
 	    h_valSend[numElements] = index;
 	    while(true) {
 		    c = INBUF[i];
 		    if(c == '\n') {
-			/*int addSuffix = numElements;
-			while(addSuffix != 0) { 
-				int digit = addSuffix % 10;
-				h_stringVals[index] = (char)(((int)'0')+digit);
-				index++;
-				addSuffix = addSuffix / 10;
-			}*/
 		   	h_stringVals[index] = 0;
 			i++;
 			index++;
@@ -211,13 +207,13 @@ runTest( int argc, char** argv)
     struct timespec t1, t2;
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
-    /* string sort Davidson et al. InPar'12
+    /* string sort Davidson et al. InPar'12 
     cudppStringSort(plan, d_stringVals, d_values, 0, numElements, stringSize);
     */
 
     /* string sort Deshpande et al. HiPC'13 */
     cudppStringSortRadix( d_stringVals, d_values, 0, numElements, stringSize);
-
+    
     clock_gettime(CLOCK_MONOTONIC, &t2);
     printf("[DEBUG] sort time (ms) : %lf\n", calculateDiff(t2, t1));
 
@@ -226,7 +222,6 @@ runTest( int argc, char** argv)
 
     result = cudppDestroyPlan(plan);
 	
-
     if (result != CUDPP_SUCCESS) {   
         printf("Error destroying CUDPPPlan for StringSort\n");
         return;
@@ -235,7 +230,7 @@ runTest( int argc, char** argv)
     /* generate an output file with extension _cudpp_output if writeOutput is set to 1 */
     if(writeOutput == 1) { 
 	    int retVal = printSortedOutput(h_valSend, h_stringVals, numElements, stringSize, inputFile);
-	    printf("test %s\n", (retVal == 0) ? "PASSED" : "FAILED");
+	    printf("string sort %s\n", (retVal == 0) ? "EXECUTED" : "FAILED");
     }
     
     cudaFree(d_values);
