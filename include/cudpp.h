@@ -79,6 +79,8 @@ enum CUDPPOption
     CUDPP_OPTION_KEYS_ONLY = 0x20, /**< No associated value to a key 
                                     * (for global radix sort) */
     CUDPP_OPTION_KEY_VALUE_PAIRS = 0x40, /**< Each key has an associated value */
+
+    CUDPP_OPTION_SORT_STRING_RADIX = 0x80,
 };
 
 
@@ -328,13 +330,6 @@ CUDPPResult cudppListRank(CUDPPHandle planHandle,
                           void *d_next_indices,
                           size_t head,
                           size_t numElements);
-
-CUDPP_DLL
-CUDPPResult cudppStringSortRadix(unsigned char *d_arrayStringVals, 
-		    unsigned int  *d_arrayAddress, 
-		    unsigned char termC, 
-		    size_t numElements, 
-		    size_t stringArrayLength);
 #ifdef __cplusplus
 }
 #endif

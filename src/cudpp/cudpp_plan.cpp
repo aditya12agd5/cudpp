@@ -532,20 +532,24 @@ CUDPPStringSortPlan::CUDPPStringSortPlan(CUDPPManager *mgr,
 										 size_t numElements, 
 										 size_t stringArrayLength)
 : CUDPPPlan(mgr, config, numElements, stringArrayLength, 0)
-{ 
-	m_subPartitions = 4;
-	m_swapPoint = 64;
-	
-	CUDPPConfiguration scanConfig = 
-    { 
-      CUDPP_SCAN, 
-      CUDPP_ADD, 
-      CUDPP_UINT, 
-      CUDPP_OPTION_FORWARD | CUDPP_OPTION_EXCLUSIVE 
-    };    
-	
+{
+	if((config.options & CUDPP_OPTION_SORT_STRING_RADIX) == 0) {
+		m_subPartitions = 4;
+		m_swapPoint = 64;
+		m_stringSortRadix = 0;
 
-	m_scanPlan = new CUDPPScanPlan(mgr, scanConfig, numElements+1, 1, 0);	
+		CUDPPConfiguration scanConfig = 
+		{ 
+			CUDPP_SCAN, 
+			CUDPP_ADD, 
+			CUDPP_UINT, 
+			CUDPP_OPTION_FORWARD | CUDPP_OPTION_EXCLUSIVE 
+		};    
+
+		m_scanPlan = new CUDPPScanPlan(mgr, scanConfig, numElements+1, 1, 0);	
+	} else { 
+		m_stringSortRadix = 1;
+	}
 	m_numElements = numElements;
 	allocStringSortStorage(this);	
 }

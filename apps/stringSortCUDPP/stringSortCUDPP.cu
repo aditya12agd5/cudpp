@@ -114,8 +114,8 @@ runTest( int argc, char** argv)
     cudaDeviceProp prop;
     if (cudaGetDeviceProperties(&prop, dev) == cudaSuccess)
     {
-        printf("Using device %d:\n", dev);
-        printf("%s; global mem: %dB; compute v%d.%d; clock: %d kHz\n",
+        printf("[DEBUG] Using device %d:\n", dev);
+        printf("[DEBUG] %s; global mem: %dB; compute v%d.%d; clock: %d kHz\n",
                prop.name, (int)prop.totalGlobalMem, (int)prop.major, 
                (int)prop.minor, (int)prop.clockRate);
     }
@@ -130,7 +130,10 @@ runTest( int argc, char** argv)
     CUDPPConfiguration config;
     config.algorithm = CUDPP_SORT_STRING;
     config.datatype = CUDPP_UINT;
-    config.options = CUDPP_OPTION_FORWARD;
+
+    // CUDPP_OPTION_SORT_STRING_RADIX indicates string sort of Deshpande and Narayanan, HiPC'13 to be used
+    // remove it for default string sort by Davidson et al.
+    config.options = CUDPP_OPTION_FORWARD | CUDPP_OPTION_SORT_STRING_RADIX;
  
     unsigned int *h_valSend, *d_values;
     unsigned char *d_stringVals;
@@ -207,12 +210,7 @@ runTest( int argc, char** argv)
     struct timespec t1, t2;
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
-    /* string sort Davidson et al. InPar'12 
     cudppStringSort(plan, d_stringVals, d_values, 0, numElements, stringSize);
-    */
-
-    /* string sort Deshpande et al. HiPC'13 */
-    cudppStringSortRadix( d_stringVals, d_values, 0, numElements, stringSize);
     
     clock_gettime(CLOCK_MONOTONIC, &t2);
     printf("[DEBUG] sort time (ms) : %lf\n", calculateDiff(t2, t1));
@@ -230,7 +228,7 @@ runTest( int argc, char** argv)
     /* generate an output file with extension _cudpp_output if writeOutput is set to 1 */
     if(writeOutput == 1) { 
 	    int retVal = printSortedOutput(h_valSend, h_stringVals, numElements, stringSize, inputFile);
-	    printf("string sort %s\n", (retVal == 0) ? "EXECUTED" : "FAILED");
+	    printf("[DEBUG] string sort %s\n", (retVal == 0) ? "EXECUTED" : "FAILED");
     }
     
     cudaFree(d_values);

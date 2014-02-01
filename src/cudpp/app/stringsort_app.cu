@@ -71,7 +71,8 @@ void cudppStringSortRadixWrapper(
 	unsigned char termC, 
 	size_t numElements,
 	size_t stringArrayLength) {
- 
+
+	//TODO: Move arrays setup to plan
 	thrust::device_vector<unsigned long long int> d_segment_keys(numElements);
 	unsigned long long int *d_array_segment_keys = thrust::raw_pointer_cast(&d_segment_keys[0]);
 	
@@ -517,7 +518,12 @@ extern "C"
 								 unsigned char termC,
 		                         const CUDPPStringSortPlan *plan)
 	{
-		runStringSort(keys, values, stringVals, numElements, stringArrayLength, termC, plan);
+
+		if(!plan->m_stringSortRadix) 
+			runStringSort(keys, values, stringVals, numElements, stringArrayLength, termC, plan);
+		else
+			cudppStringSortRadixWrapper((unsigned char *) stringVals, values, termC, numElements, stringArrayLength);
+
 	}                            
 
 #ifdef __cplusplus

@@ -144,6 +144,7 @@ public:
     virtual ~CUDPPStringSortPlan();
 
     unsigned int m_stringArrayLength;
+    unsigned int m_stringSortRadix;
 
 	CUDPPScanPlan *m_scanPlan;
 	unsigned int m_numElements;

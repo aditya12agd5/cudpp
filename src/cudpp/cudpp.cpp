@@ -476,35 +476,6 @@ CUDPPResult cudppStringSort(const CUDPPHandle planHandle,
 }
 
 /**
-* @brief This function implements the string sorting method in:
-*
-* "Can GPUs Sort Strings Efficiently?", at HiPC'13
-*
-* Contact Aditya Deshpande (aditya12agd5@gmail.com) for support and bug reports.
-* 
-* @param[in] stringVals Original string input, no need for alignment or offsets. 
-* @param[in] d_address Pointers (in order) to each strings starting location in the stringVals array
-* @param[in] termC Termination character used to separate strings
-* @param[in] numElements number of strings
-* @param[in] stringArrayLength Length in uint of the size of all strings
-* @returns CUDPPResult indicating success or error condition 
-*
-*/
-CUDPP_DLL
-CUDPPResult cudppStringSortRadix(unsigned char *d_arrayStringVals, 
-		    unsigned int  *d_arrayAddress, 
-		    unsigned char termC, 
-		    size_t numElements, 
-		    size_t stringArrayLength) {
-
-	printf("Executing radix sort based string sort procedure\n"); 
-
-	cudppStringSortRadixWrapper(d_arrayStringVals, d_arrayAddress, termC, numElements, stringArrayLength);
- 
-	return CUDPP_SUCCESS;
-}
-
-/**
  * @brief Sorts strings. Keys are the first four characters of the string, 
  * and values are the addresses where the strings reside in memory (stringVals)
  * 
@@ -543,7 +514,7 @@ CUDPPResult cudppStringSort(const CUDPPHandle planHandle,
             return CUDPP_ERROR_INVALID_PLAN;   	
 		
 
-		
+	if((plan->m_config.options & CUDPP_OPTION_SORT_STRING_RADIX) == 0) { 		
 		
 		unsigned int* packedStringVals; 
 		unsigned int *packedStringLength = (unsigned int*)malloc(sizeof(unsigned int));;		
@@ -571,6 +542,9 @@ CUDPPResult cudppStringSort(const CUDPPHandle planHandle,
 
 		free(packedStringLength);
 		cudaFree(packedStringVals);
+	} else { 
+		cudppStringSortDispatch(NULL, d_address, (unsigned int*) d_stringVals, numElements, stringArrayLength, termC, plan);
+	}
 	    return CUDPP_SUCCESS;
     }
     else
