@@ -57,24 +57,14 @@ void calculateAlignedOffsets(unsigned int* d_address,
 							 size_t numElements,
 							 size_t stringArrayLength);
 
-
-extern "C"
-void cudppStringSortRadixSetup( unsigned char* d_stringVals,
-		     unsigned int* d_valIndex, 
-		     unsigned long long int* d_packedArray,
-		     unsigned int* d_array_valIndex,
-		     unsigned int* d_array_static_index,
-		     unsigned char termC,
-		     size_t numElements, 
-		     size_t stringArrayLength);
-
 extern "C" 
 void cudppStringSortRadixWrapper(
 	unsigned char *d_arrayStringVals, 
 	unsigned int *d_arrayAddress, 
 	unsigned char termC, 
 	size_t numElements,
-	size_t stringArrayLength); 
+	size_t stringArrayLength,
+	const       CUDPPStringSortPlan *plan); 
 
 extern "C"
 void cudppStringSortRadixMain(
@@ -85,6 +75,14 @@ void cudppStringSortRadixMain(
         thrust::device_vector<unsigned int> &d_output_valIndex,
         size_t numElements,
         size_t stringArrayLength);
+
+extern "C"
+void cudppStringSortRadixSetup( unsigned char* d_stringVals,
+		unsigned int* d_address,
+		unsigned long long int* d_packedStringVals,
+		unsigned char termC,
+		size_t numElements,
+		size_t stringArrayLength);
 
 extern "C"
 void packStrings(unsigned int* packedStrings, 

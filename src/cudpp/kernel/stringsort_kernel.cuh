@@ -1414,8 +1414,6 @@ __global__
 void hipcPackStringsKernel(unsigned char* d_arrayStringVals, 
 			   unsigned int* d_address, 
 			   unsigned long long int* d_packedArray,
-			   unsigned int* d_array_valIndex,
-			   unsigned int* d_array_static_index, 
 			   char termC, 
 			   int numElements, 
 			   int stringArrayLength) {
@@ -1432,8 +1430,6 @@ void hipcPackStringsKernel(unsigned char* d_arrayStringVals,
 		val = val | (((unsigned long long int) ch) << ((7-i)*8)); 
 	}
 	d_packedArray[threadID] = val;
-	d_array_valIndex[threadID] = address;
-	d_array_static_index[threadID] = threadID; 
 }
 
 __global__

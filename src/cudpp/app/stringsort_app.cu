@@ -29,6 +29,7 @@
 #include "cudpp_stringsort.h"
 #include "kernel/stringsort_kernel.cuh"
 #include "limits.h"
+#include <stdio.h>
 
 #define BLOCKSORT_SIZE 1024
 #define DEPTH 8
@@ -70,30 +71,29 @@ void cudppStringSortRadixWrapper(
 	unsigned int *d_arrayAddress, 
 	unsigned char termC, 
 	size_t numElements,
-	size_t stringArrayLength) {
+	size_t stringArrayLength,
+	const       CUDPPStringSortPlan *plan) {
 
-	//TODO: Move arrays setup to plan
+	//TODO: better method than duplicating to thrust vectors?
 	thrust::device_vector<unsigned long long int> d_segment_keys(numElements);
-	unsigned long long int *d_array_segment_keys = thrust::raw_pointer_cast(&d_segment_keys[0]);
-	
-	thrust::device_ptr<unsigned char> d_stringVals = thrust::device_pointer_cast(d_arrayStringVals); 
- 
+	thrust::device_ptr<unsigned long long int> d_ptr_packedStringVals = 
+		thrust::device_pointer_cast(plan->m_packedStringVals);
+	thrust::copy(d_ptr_packedStringVals, d_ptr_packedStringVals + numElements, d_segment_keys.begin());
+	cudaFree(plan->m_packedStringVals);
+
 	thrust::device_vector<unsigned int> d_valIndex(numElements); 
-	unsigned int* d_array_valIndex = thrust::raw_pointer_cast(&d_valIndex[0]);
+	thrust::device_ptr<unsigned int> d_ptr_address = thrust::device_pointer_cast(d_arrayAddress);
+	thrust::copy(d_ptr_address, d_ptr_address + numElements, d_valIndex.begin());
 
         thrust::device_vector<unsigned int> d_static_index(numElements);
-	unsigned int* d_array_static_index = thrust::raw_pointer_cast(&d_static_index[0]);
+	thrust::sequence(d_static_index.begin(), d_static_index.end());
 	
         thrust::device_vector<unsigned int> d_output_valIndex(numElements);
 	
-	cudppStringSortRadixSetup(d_arrayStringVals, d_arrayAddress, d_array_segment_keys, 
-			d_array_valIndex, d_array_static_index, termC, 
-			numElements, stringArrayLength);
- 
 	cudppStringSortRadixMain(d_arrayStringVals, d_valIndex, d_segment_keys, d_static_index, 
 		d_output_valIndex, numElements, stringArrayLength);
 
-	thrust::copy(d_output_valIndex.begin(), d_output_valIndex.end(), thrust::device_pointer_cast(d_arrayAddress));
+	thrust::copy(d_output_valIndex.begin(), d_output_valIndex.end(), d_ptr_address);
 }
 
 void cudppStringSortRadixMain(
@@ -231,14 +231,12 @@ void cudppStringSortRadixMain(
 }
 
 void cudppStringSortRadixSetup( unsigned char* d_stringVals,
-		     unsigned int* d_valIndex, 
-		     unsigned long long int* d_packedArray,
-		     unsigned int* d_array_valIndex,
-		     unsigned int* d_array_static_index,
-		     unsigned char termC,
-		     size_t numElements, 
-		     size_t stringArrayLength) {
- 
+		unsigned int* d_address,
+		unsigned long long int* d_packedStringVals,
+		unsigned char termC,
+		size_t numElements,
+		size_t stringArrayLength) { 
+
 		int numBlocks = 1;
                 int numThreadsPerBlock = numElements/numBlocks;
 
@@ -248,12 +246,11 @@ void cudppStringSortRadixSetup( unsigned char* d_stringVals,
                 }
                 dim3 grid(numBlocks, 1, 1);
                 dim3 threads(numThreadsPerBlock, 1, 1);
-
-		hipcPackStringsKernel<<<grid, threads, 0>>>(d_stringVals, d_valIndex, 
-			d_packedArray, d_array_valIndex, d_array_static_index, 
-			termC, numElements, stringArrayLength);
 		
-		return;
+		hipcPackStringsKernel<<<grid, threads, 0>>>(d_stringVals, d_address, 
+			d_packedStringVals, termC, numElements, stringArrayLength);
+		
+
 }
 
 void packStrings(unsigned int* packedStrings, 
@@ -453,22 +450,29 @@ extern "C"
 	**/
 	void allocStringSortStorage(CUDPPStringSortPlan *plan)
 	{
-		
-		 	
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_keys, sizeof(unsigned int)*plan->m_numElements));				
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_tempKeys,    sizeof(unsigned int)*plan->m_numElements));		
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_tempAddress,    sizeof(unsigned int)*plan->m_numElements));		
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_packedAddress, sizeof(unsigned int)*(plan->m_numElements+1)));
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_packedAddressRef, sizeof(unsigned int)*(plan->m_numElements)));		
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_addressRef, sizeof(unsigned int)*(plan->m_numElements)));		
+	
+		if(!plan->m_stringSortRadix) 
+		{ 
 
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_spaceScan, sizeof(unsigned int)*(plan->m_numElements+1)));		
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_numSpaces, sizeof(unsigned int)*(plan->m_numElements+1)));		
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_keys, sizeof(unsigned int)*plan->m_numElements));				
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_tempKeys,    sizeof(unsigned int)*plan->m_numElements));		
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_tempAddress,    sizeof(unsigned int)*plan->m_numElements));		
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_packedAddress, sizeof(unsigned int)*(plan->m_numElements+1)));
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_packedAddressRef, sizeof(unsigned int)*(plan->m_numElements)));		
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_addressRef, sizeof(unsigned int)*(plan->m_numElements)));		
 
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_partitionSizeA, sizeof(unsigned int)*(plan->m_swapPoint*plan->m_subPartitions*4)));		
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_partitionSizeB, sizeof(unsigned int)*(plan->m_swapPoint*plan->m_subPartitions*4)));		
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_partitionStartA, sizeof(unsigned int)*(plan->m_swapPoint*plan->m_subPartitions*4)));		
-		CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_partitionStartB, sizeof(unsigned int)*(plan->m_swapPoint*plan->m_subPartitions*4)));		
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_spaceScan, sizeof(unsigned int)*(plan->m_numElements+1)));		
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_numSpaces, sizeof(unsigned int)*(plan->m_numElements+1)));		
+
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_partitionSizeA, sizeof(unsigned int)*(plan->m_swapPoint*plan->m_subPartitions*4)));		
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_partitionSizeB, sizeof(unsigned int)*(plan->m_swapPoint*plan->m_subPartitions*4)));		
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_partitionStartA, sizeof(unsigned int)*(plan->m_swapPoint*plan->m_subPartitions*4)));		
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_partitionStartB, sizeof(unsigned int)*(plan->m_swapPoint*plan->m_subPartitions*4)));	
+		} 
+		else 
+		{
+			CUDA_SAFE_CALL(cudaMalloc((void**)&plan->m_packedStringVals, sizeof(unsigned long long int)*(plan->m_numElements)));
+		}
 	}
 
 	/** @brief Deallocates intermediate memory from allocStringSortStorage.
@@ -479,20 +483,27 @@ extern "C"
 
 	void freeStringSortStorage(CUDPPStringSortPlan* plan)
 	{
-		cudaFree(plan->m_keys);
-		cudaFree(plan->m_packedAddress);
-		cudaFree(plan->m_packedAddressRef);
-		cudaFree(plan->m_tempKeys);
-		cudaFree(plan->m_tempAddress);
-		cudaFree(plan->m_addressRef);
+		if(!plan->m_stringSortRadix) 
+		{
+			cudaFree(plan->m_keys);
+			cudaFree(plan->m_packedAddress);
+			cudaFree(plan->m_packedAddressRef);
+			cudaFree(plan->m_tempKeys);
+			cudaFree(plan->m_tempAddress);
+			cudaFree(plan->m_addressRef);
 
-		cudaFree(plan->m_numSpaces);
-		cudaFree(plan->m_spaceScan);
+			cudaFree(plan->m_numSpaces);
+			cudaFree(plan->m_spaceScan);
 
-		cudaFree(plan->m_partitionSizeA);
-		cudaFree(plan->m_partitionSizeB);
-		cudaFree(plan->m_partitionStartA);
-		cudaFree(plan->m_partitionStartB);
+			cudaFree(plan->m_partitionSizeA);
+			cudaFree(plan->m_partitionSizeB);
+			cudaFree(plan->m_partitionStartA);
+			cudaFree(plan->m_partitionStartB);
+		}
+		else 
+		{
+			cudaFree(plan->m_packedStringVals);
+		}
 	}
 
 	/** @brief Dispatch function to perform a sort on an array with 
@@ -522,7 +533,7 @@ extern "C"
 		if(!plan->m_stringSortRadix) 
 			runStringSort(keys, values, stringVals, numElements, stringArrayLength, termC, plan);
 		else
-			cudppStringSortRadixWrapper((unsigned char *) stringVals, values, termC, numElements, stringArrayLength);
+			cudppStringSortRadixWrapper((unsigned char *) stringVals, values, termC, numElements, stringArrayLength, plan);
 
 	}                            
 

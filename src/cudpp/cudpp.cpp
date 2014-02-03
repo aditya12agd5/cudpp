@@ -542,7 +542,9 @@ CUDPPResult cudppStringSort(const CUDPPHandle planHandle,
 
 		free(packedStringLength);
 		cudaFree(packedStringVals);
-	} else { 
+	} else {
+
+		cudppStringSortRadixSetup(d_stringVals, d_address, plan->m_packedStringVals, termC, numElements, stringArrayLength);
 		cudppStringSortDispatch(NULL, d_address, (unsigned int*) d_stringVals, numElements, stringArrayLength, termC, plan);
 	}
 	    return CUDPP_SUCCESS;
