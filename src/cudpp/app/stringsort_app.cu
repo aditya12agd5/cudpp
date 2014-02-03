@@ -29,7 +29,6 @@
 #include "cudpp_stringsort.h"
 #include "kernel/stringsort_kernel.cuh"
 #include "limits.h"
-#include <stdio.h>
 
 #define BLOCKSORT_SIZE 1024
 #define DEPTH 8
@@ -67,39 +66,29 @@ struct get_segment_bytes {
 
 
 void cudppStringSortRadixWrapper(
-	unsigned char *d_arrayStringVals, 
-	unsigned int *d_arrayAddress, 
+	unsigned char* d_arrayStringVals, 
+	unsigned int* d_arrayAddress, 
 	unsigned char termC, 
 	size_t numElements,
 	size_t stringArrayLength,
-	const       CUDPPStringSortPlan *plan) {
-
-	//TODO: better method than duplicating to thrust vectors?
-	thrust::device_vector<unsigned long long int> d_segment_keys(numElements);
-	thrust::device_ptr<unsigned long long int> d_ptr_packedStringVals = 
-		thrust::device_pointer_cast(plan->m_packedStringVals);
-	thrust::copy(d_ptr_packedStringVals, d_ptr_packedStringVals + numElements, d_segment_keys.begin());
-	cudaFree(plan->m_packedStringVals);
-
-	thrust::device_vector<unsigned int> d_valIndex(numElements); 
-	thrust::device_ptr<unsigned int> d_ptr_address = thrust::device_pointer_cast(d_arrayAddress);
-	thrust::copy(d_ptr_address, d_ptr_address + numElements, d_valIndex.begin());
-
+	const       CUDPPStringSortPlan *plan) 
+{
+	
         thrust::device_vector<unsigned int> d_static_index(numElements);
 	thrust::sequence(d_static_index.begin(), d_static_index.end());
 	
         thrust::device_vector<unsigned int> d_output_valIndex(numElements);
 	
-	cudppStringSortRadixMain(d_arrayStringVals, d_valIndex, d_segment_keys, d_static_index, 
+	cudppStringSortRadixMain(d_arrayStringVals, d_arrayAddress, plan->m_packedStringVals, d_static_index, 
 		d_output_valIndex, numElements, stringArrayLength);
 
-	thrust::copy(d_output_valIndex.begin(), d_output_valIndex.end(), d_ptr_address);
+	thrust::copy(d_output_valIndex.begin(), d_output_valIndex.end(), thrust::device_pointer_cast(d_arrayAddress));
 }
 
 void cudppStringSortRadixMain(
 	unsigned char* d_array_stringVals,
-	thrust::device_vector<unsigned int> d_valIndex, 
-	thrust::device_vector<unsigned long long int> d_segment_keys,
+	unsigned int* d_array_valIndex, 
+	unsigned long long int* d_array_segment_keys,
 	thrust::device_vector<unsigned int> d_static_index,
 	thrust::device_vector<unsigned int> &d_output_valIndex,
 	size_t numElements, 
@@ -111,24 +100,25 @@ void cudppStringSortRadixMain(
         unsigned int lastSegmentID = 0;
 	unsigned int numSorts = 0;
 
+	thrust::device_ptr<unsigned int> d_valIndex = thrust::device_pointer_cast(d_array_valIndex);
+	thrust::device_ptr<unsigned long long int> d_segment_keys = thrust::device_pointer_cast(d_array_segment_keys);
+
 	while(true) { 
 
                 thrust::sort_by_key(
-			d_segment_keys.begin(),
-                        d_segment_keys.begin() + numElements,
-                        d_valIndex.begin()
+			d_segment_keys,
+                        d_segment_keys + numElements,
+                        d_valIndex
                 );		
 		
 		numSorts++;
 
                 thrust::device_vector<unsigned long long int> d_segment_keys_out(numElements, 0);
 	
-                unsigned int *d_array_valIndex = thrust::raw_pointer_cast(&d_valIndex[0]);
                 unsigned int *d_array_static_index = thrust::raw_pointer_cast(&d_static_index[0]);
                 unsigned int *d_array_output_valIndex = thrust::raw_pointer_cast(&d_output_valIndex[0]);
 
                 unsigned long long int *d_array_segment_keys_out = thrust::raw_pointer_cast(&d_segment_keys_out[0]);
-                unsigned long long int *d_array_segment_keys = thrust::raw_pointer_cast(&d_segment_keys[0]);
 
                 int numBlocks = 1;
                 int numThreadsPerBlock = numElements/numBlocks;
@@ -176,18 +166,18 @@ void cudppStringSortRadixMain(
                                 d_stencil.begin(), d_temp_vector.begin());
                 thrust::copy(d_temp_vector.begin(), d_temp_vector.begin() + numElements, d_segment.begin());
 
-                thrust::scatter_if(d_valIndex.begin() , d_valIndex.begin() + numElements, d_map.begin(),
+                thrust::scatter_if(d_valIndex, d_valIndex + numElements, d_map.begin(),
                                 d_stencil.begin(), d_temp_vector.begin());
 
-                thrust::copy(d_temp_vector.begin(), d_temp_vector.begin() + numElements, d_valIndex.begin());
+                thrust::copy(d_temp_vector.begin(), d_temp_vector.begin() + numElements, d_valIndex);
 
                 thrust::scatter_if(d_static_index.begin(), d_static_index.begin() + numElements, d_map.begin(),
                                 d_stencil.begin(), d_temp_vector.begin());
                 thrust::copy(d_temp_vector.begin(), d_temp_vector.begin() + numElements, d_static_index.begin());
 
                 thrust::scatter_if(d_segment_keys_out.begin(), d_segment_keys_out.begin() + numElements, d_map.begin(),
-                                d_stencil.begin(), d_segment_keys.begin());
-                thrust::copy(d_segment_keys.begin(), d_segment_keys.begin() + numElements, d_segment_keys_out.begin());
+                                d_stencil.begin(), d_segment_keys);
+                thrust::copy(d_segment_keys, d_segment_keys + numElements, d_segment_keys_out.begin());
 
 
                 numElements = *(d_map.begin() + numElements - 1) + *(d_stencil.begin() + numElements - 1);
@@ -235,7 +225,8 @@ void cudppStringSortRadixSetup( unsigned char* d_stringVals,
 		unsigned long long int* d_packedStringVals,
 		unsigned char termC,
 		size_t numElements,
-		size_t stringArrayLength) { 
+		size_t stringArrayLength) 
+{ 
 
 		int numBlocks = 1;
                 int numThreadsPerBlock = numElements/numBlocks;
@@ -250,7 +241,6 @@ void cudppStringSortRadixSetup( unsigned char* d_stringVals,
 		hipcPackStringsKernel<<<grid, threads, 0>>>(d_stringVals, d_address, 
 			d_packedStringVals, termC, numElements, stringArrayLength);
 		
-
 }
 
 void packStrings(unsigned int* packedStrings, 

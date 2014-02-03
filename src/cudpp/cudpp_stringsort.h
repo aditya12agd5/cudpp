@@ -59,8 +59,8 @@ void calculateAlignedOffsets(unsigned int* d_address,
 
 extern "C" 
 void cudppStringSortRadixWrapper(
-	unsigned char *d_arrayStringVals, 
-	unsigned int *d_arrayAddress, 
+	unsigned char* d_arrayStringVals, 
+	unsigned int* d_arrayAddress, 
 	unsigned char termC, 
 	size_t numElements,
 	size_t stringArrayLength,
@@ -68,9 +68,9 @@ void cudppStringSortRadixWrapper(
 
 extern "C"
 void cudppStringSortRadixMain(
-        unsigned char *d_array_stringVals,
-        thrust::device_vector<unsigned int> d_valIndex,
-        thrust::device_vector<unsigned long long int> d_segment_keys,
+        unsigned char* d_array_stringVals,
+        unsigned int* d_valIndex,
+        unsigned long long int* d_segment_keys,
         thrust::device_vector<unsigned int> d_static_index,
         thrust::device_vector<unsigned int> &d_output_valIndex,
         size_t numElements,
