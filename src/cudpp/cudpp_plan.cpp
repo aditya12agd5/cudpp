@@ -533,7 +533,8 @@ CUDPPStringSortPlan::CUDPPStringSortPlan(CUDPPManager *mgr,
 										 size_t stringArrayLength)
 : CUDPPPlan(mgr, config, numElements, stringArrayLength, 0)
 {
-	if((config.options & CUDPP_OPTION_SORT_STRING_RADIX) == 0) {
+	if((config.options & CUDPP_OPTION_SORT_STRING_RADIX) == 0) 
+	{
 		m_subPartitions = 4;
 		m_swapPoint = 64;
 		m_stringSortRadix = 0;
@@ -547,7 +548,10 @@ CUDPPStringSortPlan::CUDPPStringSortPlan(CUDPPManager *mgr,
 		};    
 
 		m_scanPlan = new CUDPPScanPlan(mgr, scanConfig, numElements+1, 1, 0);	
-	} else { 
+	} 
+	else 
+	{
+		//set to 1 if radix sort based string sort is specified in configuration
 		m_stringSortRadix = 1;
 	}
 	m_numElements = numElements;

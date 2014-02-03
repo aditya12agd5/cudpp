@@ -514,7 +514,8 @@ CUDPPResult cudppStringSort(const CUDPPHandle planHandle,
             return CUDPP_ERROR_INVALID_PLAN;   	
 		
 
-	if((plan->m_config.options & CUDPP_OPTION_SORT_STRING_RADIX) == 0) { 		
+	if((plan->m_config.options & CUDPP_OPTION_SORT_STRING_RADIX) == 0) 
+	{ 		
 		
 		unsigned int* packedStringVals; 
 		unsigned int *packedStringLength = (unsigned int*)malloc(sizeof(unsigned int));;		
@@ -542,8 +543,12 @@ CUDPPResult cudppStringSort(const CUDPPHandle planHandle,
 
 		free(packedStringLength);
 		cudaFree(packedStringVals);
-	} else {
-
+	} 
+	else 
+	{
+		//Perform setup and dispactch for radix sort based string sort procedure
+		//if CUDPP_OPTION_SORT_STRING_RADIX option is set in configuration.
+		
 		cudppStringSortRadixSetup(d_stringVals, d_address, plan->m_packedStringVals, termC, numElements, stringArrayLength);
 		cudppStringSortDispatch(NULL, d_address, (unsigned int*) d_stringVals, numElements, stringArrayLength, termC, plan);
 	}

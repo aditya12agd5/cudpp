@@ -80,7 +80,8 @@ enum CUDPPOption
                                     * (for global radix sort) */
     CUDPP_OPTION_KEY_VALUE_PAIRS = 0x40, /**< Each key has an associated value */
 
-    CUDPP_OPTION_SORT_STRING_RADIX = 0x80,
+    CUDPP_OPTION_SORT_STRING_RADIX = 0x80, /**< Use the radix sort based string sort
+					    * procedure. */
 };
 
 

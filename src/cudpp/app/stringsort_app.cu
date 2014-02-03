@@ -64,7 +64,20 @@ struct get_segment_bytes {
         }
 };
 
-
+/** @brief This is a wrapper function which internally calls
+* the radix sort based string sort main logic.  
+*
+* It initially allocates a few temporary arrays for string sort,
+* then calls string sort logic and copies sorted string positions 
+* back to the addresses array.
+*
+* @param[in] d_arrayStringVals Strings which are delimited by termC.
+* @param[in,out] d_arrayAddress Addresses of successive string characters for tie-breaks.
+* @param[in] termC Termination character for our strings.
+* @param[in] numElements Number of elements in the sort.
+* @param[in] stringArrayLength The size of our string array containing characters delimited by termc.
+* @param[in] plan Configuration information for string sort.
+**/
 void cudppStringSortRadixWrapper(
 	unsigned char* d_arrayStringVals, 
 	unsigned int* d_arrayAddress, 
@@ -73,18 +86,40 @@ void cudppStringSortRadixWrapper(
 	size_t stringArrayLength,
 	const       CUDPPStringSortPlan *plan) 
 {
-	
+
+	//allocate some temporary thrust arrays for string sort logic
         thrust::device_vector<unsigned int> d_static_index(numElements);
 	thrust::sequence(d_static_index.begin(), d_static_index.end());
 	
         thrust::device_vector<unsigned int> d_output_valIndex(numElements);
-	
+
+	//call the main string sort logic
 	cudppStringSortRadixMain(d_arrayStringVals, d_arrayAddress, plan->m_packedStringVals, d_static_index, 
 		d_output_valIndex, numElements, stringArrayLength);
 
+	//copy sorted output addresses back to d_arrayAddress
 	thrust::copy(d_output_valIndex.begin(), d_output_valIndex.end(), thrust::device_pointer_cast(d_arrayAddress));
 }
 
+/** @brief This function contains the main radix sort based
+* string sort logic.
+*   
+*
+* It iteratively sorts strings from left to right. It loads string 
+* characters into MCUs along with segment information (history of 
+* previous sort steps), singleton strings are eliminated per iteration
+* and minimum bytes are used to record segment information. 
+* Refer to: Aditya Deshpande and P J Narayanan, "Can GPUs Sort Strings Efficiently" (HiPC'13)
+* for more details.
+*
+* @param[in] d_arrayStringVals Strings which are delimited by termC.
+* @param[in] d_array_valIndex Addresses of successive string characters for tie-breaks.
+* @param[in] d_array_segment_keys String Keys packed into 8 byte unsigned long long int.
+* @param[in] d_array_static_index Temporary Array to help singleton elimination in string sort logic.
+* @param[in,out] d_output_valIndex Addresses of the strings in sorted order are returned through this array.
+* @param[in] numElements Number of elements in the sort.
+* @param[in] stringArrayLength The size of our string array containing characters delimited by termC.
+**/
 void cudppStringSortRadixMain(
 	unsigned char* d_array_stringVals,
 	unsigned int* d_array_valIndex, 
@@ -95,16 +130,26 @@ void cudppStringSortRadixMain(
 	size_t stringArrayLength) {
 
 	int MAX_THREADS_PER_BLOCK = 512;
-        unsigned int charPosition = 8;
+
+        //8 characters are already loaded for first sort step, 
+	// load successive ones after that 
+	unsigned int charPosition = 8;
+
+	//no segment information for first sort step, 
+	//future sort steps will have non-zero segment information bytes
         unsigned int segmentBytes = 0;
-        unsigned int lastSegmentID = 0;
+        
+	unsigned int lastSegmentID = 0;
 	unsigned int numSorts = 0;
 
+	//convert allocated arrays to device_ptr to enable use of thrust functions on them
 	thrust::device_ptr<unsigned int> d_valIndex = thrust::device_pointer_cast(d_array_valIndex);
 	thrust::device_ptr<unsigned long long int> d_segment_keys = thrust::device_pointer_cast(d_array_segment_keys);
 
-	while(true) { 
+	while(true) 
+	{ 
 
+		//sort 8 byte consisting of segment information and then string characters
                 thrust::sort_by_key(
 			d_segment_keys,
                         d_segment_keys + numElements,
@@ -123,21 +168,23 @@ void cudppStringSortRadixMain(
                 int numBlocks = 1;
                 int numThreadsPerBlock = numElements/numBlocks;
 
-                if(numThreadsPerBlock > MAX_THREADS_PER_BLOCK) {
+                if(numThreadsPerBlock > MAX_THREADS_PER_BLOCK) 
+		{
                         numBlocks = (int)ceil(numThreadsPerBlock/(float)MAX_THREADS_PER_BLOCK);
                         numThreadsPerBlock = MAX_THREADS_PER_BLOCK;
                 }
                 dim3 grid(numBlocks, 1, 1);
                 dim3 threads(numThreadsPerBlock, 1, 1);
 
+		//load successive 8 characters in a temporary array (d_array_segment_keys_out)
                 cudaThreadSynchronize();
                 
 		
-		hipcFindSuccessorKernel<<<grid, threads, 0>>>(d_array_stringVals, d_array_segment_keys, d_array_valIndex,
-                                d_array_segment_keys_out, numElements, stringArrayLength, charPosition, segmentBytes);
+		hipcFindSuccessorKernel<<<grid, threads, 0>>>(d_array_stringVals, d_array_segment_keys, d_array_valIndex, d_array_segment_keys_out, numElements, stringArrayLength, charPosition, segmentBytes);
                	
 		cudaThreadSynchronize();
 
+		//change char position to reflect more characters loaded
                 charPosition+=7;
 
                 thrust::device_vector<unsigned int> d_temp_vector(numElements);
@@ -154,9 +201,10 @@ void cudppStringSortRadixMain(
 
 		thrust::inclusive_scan(d_temp_vector.begin(), d_temp_vector.begin() + numElements, d_segment.begin());
 
+		//eliminate the singleton (bucket size == 1) strings from sort problem
+		//write their position to final output (d_array_output_valIndex)
                 cudaThreadSynchronize();
-                hipcEliminateSingletonKernel<<<grid, threads, 0>>>(d_array_output_valIndex, d_array_valIndex, d_array_static_index,
-                        d_array_temp_vector, d_array_stencil, numElements);
+                hipcEliminateSingletonKernel<<<grid, threads, 0>>>(d_array_output_valIndex, d_array_valIndex, d_array_static_index, d_array_temp_vector, d_array_stencil, numElements);
                 cudaThreadSynchronize();
 
 
@@ -181,8 +229,10 @@ void cudppStringSortRadixMain(
 
 
                 numElements = *(d_map.begin() + numElements - 1) + *(d_stencil.begin() + numElements - 1);
-		if(numElements != 0) {
-                        lastSegmentID = *(d_segment.begin() + numElements - 1);
+		if(numElements != 0) 
+		{
+			//compute the minimum bytes required for segment information in next sort step
+			lastSegmentID = *(d_segment.begin() + numElements - 1);
                 }
 
                 d_temp_vector.clear();
@@ -194,32 +244,50 @@ void cudppStringSortRadixMain(
                 d_map.clear();
                 d_map.shrink_to_fit();
 
-		if(numElements == 0) {
+		//continue sort if non-zero number of elements remain after singleton elimination, else terminate
+		if(numElements == 0) 
+		{
 			break;
 		}
 
+		//reset the char position since some bytes would now be used by segment information
                 segmentBytes = (int) ceil(((float)(log2((float)lastSegmentID+2))*1.0)/8.0);
                 charPosition-=(segmentBytes-1);
 
 		int numBlocks1 = 1;
                 int numThreadsPerBlock1 = numElements/numBlocks1;
 
-                if(numThreadsPerBlock1 > MAX_THREADS_PER_BLOCK) {
+                if(numThreadsPerBlock1 > MAX_THREADS_PER_BLOCK) 
+		{
                         numBlocks1 = (int)ceil(numThreadsPerBlock1/(float)MAX_THREADS_PER_BLOCK);
                         numThreadsPerBlock1 = MAX_THREADS_PER_BLOCK;
                 }
                 dim3 grid1(numBlocks1, 1, 1);
                 dim3 threads1(numThreadsPerBlock1, 1, 1);
 
+		//pack segment information and string characters (few of the 8 loaded in find successor step)
+		//into d_array_segment_keys
                 cudaThreadSynchronize();
-                hipcRearrangeSegMCUKernel<<<grid1, threads1, 0>>>(d_array_segment_keys, d_array_segment_keys_out, d_array_segment,
-                                segmentBytes, numElements);
+                hipcRearrangeSegMCUKernel<<<grid1, threads1, 0>>>(d_array_segment_keys, d_array_segment_keys_out, d_array_segment, segmentBytes, numElements);
                 cudaThreadSynchronize();
+
+		//perform future sort on segment information and successive characters
 	}
 	
 	return;
 }
 
+/** @brief This function calls a kernel to pack first
+* 8 string characters to unsigned long long int.
+* 
+*   
+* @param[in] d_stringVals Strings which are delimited by termC.
+* @param[in] d_address Addresses of successive string characters for tie-breaks.
+* @param[in,out] d_packedStringVals String Keys packed into 8 byte unsigned long long int are returned.
+* @param[in] termC Termination character for our strings.
+* @param[in] numElements Number of elements in the sort.
+* @param[in] stringArrayLength The size of our string array containing characters delimited by termC.
+**/
 void cudppStringSortRadixSetup( unsigned char* d_stringVals,
 		unsigned int* d_address,
 		unsigned long long int* d_packedStringVals,
@@ -231,15 +299,18 @@ void cudppStringSortRadixSetup( unsigned char* d_stringVals,
 		int numBlocks = 1;
                 int numThreadsPerBlock = numElements/numBlocks;
 
-                if(numThreadsPerBlock > 512) {
+                if(numThreadsPerBlock > 512) 
+		{
                         numBlocks = (int)ceil(numThreadsPerBlock/(float)512);
                         numThreadsPerBlock = 512;
                 }
                 dim3 grid(numBlocks, 1, 1);
                 dim3 threads(numThreadsPerBlock, 1, 1);
-		
-		hipcPackStringsKernel<<<grid, threads, 0>>>(d_stringVals, d_address, 
-			d_packedStringVals, termC, numElements, stringArrayLength);
+
+		//Embarrassingly parallel kernel to pack first 8 string characters (d_stringVals)
+		//into an unsigned long long int array (d_packedStringVals).
+		hipcPackStringsKernel<<<grid, threads, 0>>>(d_stringVals, d_address, d_packedStringVals, termC, numElements, stringArrayLength);
+		return;
 		
 }
 

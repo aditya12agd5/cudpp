@@ -144,7 +144,7 @@ public:
     virtual ~CUDPPStringSortPlan();
 
     unsigned int m_stringArrayLength;
-    unsigned int m_stringSortRadix;
+    unsigned int m_stringSortRadix; //!< Designates radix sort based string sort procedure
 
 	CUDPPScanPlan *m_scanPlan;
 	unsigned int m_numElements;
@@ -159,7 +159,7 @@ public:
 
 	unsigned int m_subPartitions, m_swapPoint;
 	unsigned int *m_partitionSizeA, *m_partitionSizeB, *m_partitionStartA, *m_partitionStartB;
-	unsigned long long int* m_packedStringVals;
+	unsigned long long int* m_packedStringVals; //!< @internal 8-byte sort units for radix sorting procedure
 
 
 	

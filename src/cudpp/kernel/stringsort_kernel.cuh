@@ -1405,11 +1405,15 @@ void stringMergeMulti(T *A_keys, T*A_keys_out, T* A_values, T *A_values_out, T* 
 }
 
 
-/**
-* @brief Packs strings into unsigned long long ints.
-*
-**/
-
+/** @brief Packs strings into unsigned long long int to be sorted later. 
+ *
+ * @param[in] d_arrayStringVals Unpacked string array which we will pack
+ * @param[in] d_address Input addresses of unpacked strings 
+ * @param[out] d_packedArray Resulting array of first 8 characters of each string packed
+ * @param[in] termC Termination character for the strings
+ * @param[in] numElements Number of strings
+ * @param[in] stringArrayLength Number of characters in the string array
+ **/
 __global__ 
 void hipcPackStringsKernel(unsigned char* d_arrayStringVals, 
 			   unsigned int* d_address, 
@@ -1432,6 +1436,17 @@ void hipcPackStringsKernel(unsigned char* d_arrayStringVals,
 	d_packedArray[threadID] = val;
 }
 
+/** @brief Loads successive 8 characters (or until 0 is encountered). 
+ *
+ * @param[in] d_array_stringVals Unpacked string array delimited by termC.
+ * @param[in] d_array_segment_keys Array consisting of segment information and string characters.
+ * @param[in] d_array_valIndex Addresses of successive string characters.
+ * @param[out] d_array_segment_keys_out Successive 8 characters per string are returned in this array.
+ * @param[in] numElements Number of strings.
+ * @param[in] stringSize Number of characters in the string array.
+ * @param[in] charPosition Offset from start of each string where successive characters are to be loaded from.
+ * @param[in] segmentBytes Number of bytes occupied by the segment information in current key.
+ **/
 __global__
 void hipcFindSuccessorKernel(unsigned char *d_array_stringVals, 
 			     unsigned long long int *d_array_segment_keys,  
@@ -1485,6 +1500,15 @@ void hipcFindSuccessorKernel(unsigned char *d_array_stringVals,
 	}
 }
 
+/** @brief Eliminates strings that fall in size 1 bucket after radix sort. 
+ *
+ * @param[in,out] d_array_output_valIndex Contains sorted addresses of singleton strings  
+ * @param[in] d_array_valIndex Addresses of successive string characters.
+ * @param[in] d_array_static_index Temporary array to help write singleton strings to correct place.
+ * @param[in] d_array_map Temporary array to identify a singleton string.
+ * @param[out] d_array_stencil Is set to 0 for singleton strings, 1 otherwise.
+ * @param[in] currentSize Number of strings remaining to be sorted (reduces because of eliminated singleton strings).
+ **/
 __global__ 
 void  hipcEliminateSingletonKernel(unsigned int *d_array_output_valIndex, 
 			           unsigned int *d_array_valIndex, 
@@ -1511,6 +1535,15 @@ void  hipcEliminateSingletonKernel(unsigned int *d_array_output_valIndex,
 	}
 }
 
+/** @brief Packs segment information and few of the 8 lookahead characters 
+ * into unsigned long long int for next sort step.
+ *
+ * @param[out] d_array_segment_keys Keys for next sort step are returned.  
+ * @param[in] d_array_segment_keys_out Successive 8 characters are already loaded in this. 
+ * @param[in] d_array_segment Segment information is loaded in this.  
+ * @param[in] segmentBytes Number of bytes to be used from segment bytes for segment information in output.
+ * @param[in] numElements Number of strings remaining to be sorted (reduces because of eliminated singleton strings).
+ **/
 __global__ 
 void hipcRearrangeSegMCUKernel(unsigned long long int *d_array_segment_keys, 
 			       unsigned long long int *d_array_segment_keys_out, 
