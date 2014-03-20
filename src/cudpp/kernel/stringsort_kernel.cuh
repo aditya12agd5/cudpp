@@ -1430,7 +1430,9 @@ void hipcPackStringsKernel(unsigned char* d_arrayStringVals,
 	
 	for(int i = 0; i < 8; i++) {
 		unsigned char ch = d_arrayStringVals[address + i];
-		if(ch == termC) break;
+		if(ch == termC || ch == '\0') {
+			break;
+		}
 		val = val | (((unsigned long long int) ch) << ((7-i)*8)); 
 	}
 	d_packedArray[threadID] = val;
@@ -1442,6 +1444,7 @@ void hipcPackStringsKernel(unsigned char* d_arrayStringVals,
  * @param[in] d_array_segment_keys Array consisting of segment information and string characters.
  * @param[in] d_array_valIndex Addresses of successive string characters.
  * @param[out] d_array_segment_keys_out Successive 8 characters per string are returned in this array.
+ * @param[in] termC Termination character for the strings
  * @param[in] numElements Number of strings.
  * @param[in] stringSize Number of characters in the string array.
  * @param[in] charPosition Offset from start of each string where successive characters are to be loaded from.
@@ -1452,7 +1455,8 @@ void hipcFindSuccessorKernel(unsigned char *d_array_stringVals,
 			     unsigned long long int *d_array_segment_keys,  
 	                     unsigned int *d_array_valIndex, 
                              unsigned long long int *d_array_segment_keys_out,  
-                             unsigned int numElements, 
+                             unsigned char termC,
+			     unsigned int numElements, 
 		             unsigned int stringSize, 
 			     unsigned int charPosition, 
 			     unsigned int segmentBytes) {
@@ -1488,6 +1492,7 @@ void hipcFindSuccessorKernel(unsigned char *d_array_stringVals,
 		for(i = 6; i >=0; i--) { 
 			if( stringIndex +  startPosition < stringSize ) { 
 				ch = d_array_stringVals[ stringIndex + startPosition ];
+				if(ch == termC) ch = '\0';
 				d_array_segment_keys_out[threadID] |= ((unsigned long long int) ch << (i*8)); 
 				startPosition++;
 				if(ch == '\0') break;
@@ -1548,7 +1553,7 @@ __global__
 void hipcRearrangeSegMCUKernel(unsigned long long int *d_array_segment_keys, 
 			       unsigned long long int *d_array_segment_keys_out, 
 			       unsigned int *d_array_segment, 
-			       unsigned int segmentBytes, 
+			       unsigned int segmentBytes,
 			       unsigned int numElements) { 
 
 	int threadID = (blockIdx.x * blockDim.x) +  threadIdx.x;

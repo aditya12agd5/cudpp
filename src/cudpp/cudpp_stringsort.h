@@ -71,6 +71,7 @@ void cudppStringSortRadixMain(unsigned char* d_array_stringVals,
  									unsigned long long int* d_segment_keys,
 								        thrust::device_vector<unsigned int> d_static_index,
  									thrust::device_vector<unsigned int> &d_output_valIndex,
+	  unsigned char termC,
        									size_t numElements,
   									size_t stringArrayLength);
 

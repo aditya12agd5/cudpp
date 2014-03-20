@@ -95,7 +95,7 @@ void cudppStringSortRadixWrapper(
 
 	//call the main string sort logic
 	cudppStringSortRadixMain(d_arrayStringVals, d_arrayAddress, plan->m_packedStringVals, d_static_index, 
-		d_output_valIndex, numElements, stringArrayLength);
+		d_output_valIndex, termC, numElements, stringArrayLength);
 
 	//copy sorted output addresses back to d_arrayAddress
 	thrust::copy(d_output_valIndex.begin(), d_output_valIndex.end(), thrust::device_pointer_cast(d_arrayAddress));
@@ -117,6 +117,7 @@ void cudppStringSortRadixWrapper(
 * @param[in] d_array_segment_keys String Keys packed into 8 byte unsigned long long int.
 * @param[in] d_array_static_index Temporary Array to help singleton elimination in string sort logic.
 * @param[in,out] d_output_valIndex Addresses of the strings in sorted order are returned through this array.
+* @param[in] termC Termination character for our strings.
 * @param[in] numElements Number of elements in the sort.
 * @param[in] stringArrayLength The size of our string array containing characters delimited by termC.
 **/
@@ -126,6 +127,7 @@ void cudppStringSortRadixMain(
 	unsigned long long int* d_array_segment_keys,
 	thrust::device_vector<unsigned int> d_static_index,
 	thrust::device_vector<unsigned int> &d_output_valIndex,
+	unsigned char termC,
 	size_t numElements, 
 	size_t stringArrayLength) {
 
@@ -180,7 +182,7 @@ void cudppStringSortRadixMain(
                 cudaThreadSynchronize();
                 
 		
-		hipcFindSuccessorKernel<<<grid, threads, 0>>>(d_array_stringVals, d_array_segment_keys, d_array_valIndex, d_array_segment_keys_out, numElements, stringArrayLength, charPosition, segmentBytes);
+		hipcFindSuccessorKernel<<<grid, threads, 0>>>(d_array_stringVals, d_array_segment_keys, d_array_valIndex, d_array_segment_keys_out, termC, numElements, stringArrayLength, charPosition, segmentBytes);
                	
 		cudaThreadSynchronize();
 

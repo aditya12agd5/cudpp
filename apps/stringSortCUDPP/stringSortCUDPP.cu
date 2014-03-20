@@ -37,7 +37,7 @@
 void runTest( int argc, char** argv);
 
 int printSortedOutput(unsigned int *valuesSorted, unsigned char* stringVals, 
-		int numElements, int stringSize, char inputFile[500]) {
+		unsigned char termC, int numElements, int stringSize, char inputFile[500]) {
 	int retval = 0;
 	char outFile[500];
 
@@ -54,7 +54,7 @@ int printSortedOutput(unsigned int *valuesSorted, unsigned char* stringVals,
 		while(true) { 
 			char ch;
 			ch = (char)(stringVals[index]);
-			if(ch == '\0') break;
+			if(ch == termC) break;
 			fprintf(fp,"%c",ch);
 			index++;
 		}
@@ -168,12 +168,15 @@ runTest( int argc, char** argv)
 
     /* pack the strings of the read file into array of unsigned chars with \0 as delimiter */
     //TODO: can pass newline character as termC also.
+
+    unsigned char termC = '\n';
     while(i < MAXBYTES) { 
 	    h_valSend[numElements] = index;
 	    while(true) {
 		    c = INBUF[i];
-		    if(c == '\n') {
-		   	h_stringVals[index] = 0;
+		    //NOTE: fread either reads a \0 or \n at end of file, so they are hard coded
+		    if(c == termC || c == '\0' || c == '\n') {
+		   	h_stringVals[index] = termC;
 			i++;
 			index++;
 			break;
@@ -210,7 +213,7 @@ runTest( int argc, char** argv)
     struct timespec t1, t2;
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
-    cudppStringSort(plan, d_stringVals, d_values, 0, numElements, stringSize);
+    cudppStringSort(plan, d_stringVals, d_values, termC, numElements, stringSize);
     
     clock_gettime(CLOCK_MONOTONIC, &t2);
     printf("[DEBUG] sort time (ms) : %lf\n", calculateDiff(t2, t1));
@@ -227,7 +230,7 @@ runTest( int argc, char** argv)
 
     /* generate an output file with extension _cudpp_output if writeOutput is set to 1 */
     if(writeOutput == 1) { 
-	    int retVal = printSortedOutput(h_valSend, h_stringVals, numElements, stringSize, inputFile);
+	    int retVal = printSortedOutput(h_valSend, h_stringVals, termC, numElements, stringSize, inputFile);
 	    printf("[DEBUG] string sort %s\n", (retVal == 0) ? "EXECUTED" : "FAILED");
     }
     
